@@ -1,6 +1,6 @@
 "use strict";
 
-// Similar Artists page. Plain script: no framework, nothing loaded from other sites.
+// Artist Explorer page. Plain script: no framework, nothing loaded from other sites.
 // Every value from the server reaches the page as text (textContent or setAttribute), never as
 // markup. The rules are BR3.1 to BR3.3 and BR4.1 to BR4.13 of the u3-web design.
 (function () {

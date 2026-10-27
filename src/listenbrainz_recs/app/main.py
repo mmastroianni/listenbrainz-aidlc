@@ -86,7 +86,7 @@ def create_app(models_dir: Path | None = None) -> FastAPI:
         yield
         store.close()
 
-    app = FastAPI(title="Similar Artists", version="1", lifespan=lifespan)
+    app = FastAPI(title="Artist Explorer", version="1", lifespan=lifespan)
     app.state.store = store
 
     @app.middleware("http")

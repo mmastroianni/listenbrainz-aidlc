@@ -12,7 +12,7 @@ def test_runner_collects_this_folder_and_the_app_builds_on_hand_made_files(
     gap_models: Path,
 ) -> None:
     app = create_app(gap_models)
-    assert app.title == "Similar Artists"
+    assert app.title == "Artist Explorer"
 
 
 def test_the_package_ships_a_static_folder_for_the_page() -> None:
