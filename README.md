@@ -18,37 +18,41 @@ the files they build. It serves one web page and answers `GET /api/suggest` and
 ## Getting the data
 
 The app needs two public dumps. Neither is in this repository; the pipeline reads them in place and
-never changes them. Put both under one folder (the examples call it `/path/to/listenbrainz`), and
+never changes them. Put both under one folder (the examples call it `/path/to/listenbrainz`) and
 point `LISTENBRAINZ_DATA_ROOT` at it.
 
-| Dump | Where to get it | Size (our copy) |
-|------|-----------------|-----------------|
-| ListenBrainz statistics dump (`listenbrainz-statistics-dump-<date>.tar.zst`) | <https://data.metabrainz.org/pub/musicbrainz/listenbrainz/> | about 21 GB packed, 137 GB extracted |
-| MusicBrainz database dump (`mbdump`) | <https://data.metabrainz.org/pub/musicbrainz/data/fullexport/> | about 8 GB for the four tables used |
+| Dump | File to download | Size |
+|------|------------------|------|
+| ListenBrainz **statistics** dump | [`listenbrainz-statistics-dump-20261015-000002.tar.zst`](https://data.metabrainz.org/pub/musicbrainz/listenbrainz/fullexport/listenbrainz-dump-2723-20261015-000002-full/) (in the `fullexport/listenbrainz-dump-<id>-<date>-full/` folder; there is a `.sha256` file beside it) | 23 GB packed, about 140 GB extracted |
+| MusicBrainz database dump | [`mbdump.tar.bz2`](https://data.metabrainz.org/pub/musicbrainz/data/fullexport/) (in the newest dated folder under `data/fullexport/`; `LATEST` names it) | about 7 GB packed |
 
-Extract the ListenBrainz archive (it needs `zstd`) and keep the four MusicBrainz tables:
+Take the **statistics** dump. The folder it sits in also holds a 233 GB listens dump and a 232 GB
+spark dump; the pipeline does not use those. The file names carry the dump's date, so newer dumps
+have different names.
+
+Extract the ListenBrainz archive (needs `zstd`) and only the four MusicBrainz tables the app reads
+(`artist`, `artist_tag`, `tag`, `genre`):
 
 ```bash
 cd /path/to/listenbrainz
-tar --zstd -xf listenbrainz-statistics-dump-<date>.tar.zst      # or: zstd -dc ... | tar -x
-mkdir -p data/musicbrainz            # extract the MusicBrainz export so it ends up in mbdump/
+tar --zstd -xf listenbrainz-statistics-dump-20261015-000002.tar.zst
+mkdir -p data/musicbrainz
+tar -xjf mbdump.tar.bz2 -C data/musicbrainz mbdump/artist mbdump/artist_tag mbdump/tag mbdump/genre
 ```
 
-The folder the pipeline expects looks like this (`artist`, `artist_tag`, `tag` and `genre` are the
-only MusicBrainz tables it reads; the other tables in the export can stay or go):
+The folder the pipeline expects then looks like this:
 
 ```
 /path/to/listenbrainz/
-  listenbrainz-statistics-dump-<date>/lbdump/statistics/artists_all_time.jsonl
+  listenbrainz-statistics-dump-20261015-000002/lbdump/statistics/artists_all_time.jsonl
   data/musicbrainz/mbdump/{artist,artist_tag,tag,genre}
 ```
 
 If more than one `listenbrainz-statistics-dump-*` folder is there, the newest is used. A missing
-file stops the first step with a message naming it. The exact archive names on the download sites
-change with each release, so check the listings; the layout above is what the code looks for.
+file stops the first step with a message naming it.
 
-The full dump needs a lot of memory and disk: a full rebuild took about 13 minutes on a machine
-with 24 GB given to Spark (training peaked near 13 GB). For a first try, use the sample run below.
+The full dump needs a lot of memory and disk: a full rebuild took about 13 minutes with 24 GB given
+to Spark (training peaked near 13 GB). For a first try, use the sample run below.
 
 ## Settings (environment variables)
 
