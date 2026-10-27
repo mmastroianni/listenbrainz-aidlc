@@ -1,0 +1,32 @@
+{
+  "stage": "nfr-design",
+  "unit": "u1-skeleton",
+  "upstream_ids": [
+    "NFR1.1", "NFR1.2", "NFR1.3", "NFR1.4",
+    "NFR2.1", "NFR2.2", "NFR2.3", "NFR2.4", "NFR2.5", "NFR2.6", "NFR2.7",
+    "NFR3.1", "NFR3.2", "NFR3.3",
+    "NFR4.1", "NFR5.1",
+    "NFR8.1", "NFR8.2", "NFR8.3"
+  ],
+  "coverage": [
+    { "id": "NFR1.1", "status": "OK", "target": "In-memory index and artist file loaded once at startup (performance-design.md)" },
+    { "id": "NFR1.2", "status": "Deferred", "target": "code-generation of u2-pipeline (full-size speed check)" },
+    { "id": "NFR1.3", "status": "OK", "target": "Local Spark, small rank, one shared SparkSession (performance-design.md)" },
+    { "id": "NFR1.4", "status": "OK", "target": "Streaming prepare and batched writes (scalability-design.md)" },
+    { "id": "NFR2.1", "status": "OK", "target": "Startup file and manifest check (reliability-design.md)" },
+    { "id": "NFR2.2", "status": "OK", "target": "Temp-name-then-rename, manifest last (reliability-design.md)" },
+    { "id": "NFR2.3", "status": "OK", "target": "Step markers checked by the next step (reliability-design.md)" },
+    { "id": "NFR2.4", "status": "OK", "target": "Wrapped boundary errors with clear messages (reliability-design.md)" },
+    { "id": "NFR2.5", "status": "OK", "target": "One summary line per command (observability-design.md)" },
+    { "id": "NFR2.6", "status": "OK", "target": "Request logging middleware (observability-design.md)" },
+    { "id": "NFR2.7", "status": "OK", "target": "GET /api/health (observability-design.md)" },
+    { "id": "NFR3.1", "status": "OK", "target": "Allow-listed response fields (security-design.md)" },
+    { "id": "NFR3.2", "status": "OK", "target": "Prepare keeps only listener number, artist id, count (security-design.md)" },
+    { "id": "NFR3.3", "status": "OK", "target": "DumpSource opens files read-only (security-design.md)" },
+    { "id": "NFR4.1", "status": "OK", "target": "No HTTP client dependency (security-design.md)" },
+    { "id": "NFR5.1", "status": "OK", "target": "gitignore plus check-script test (security-design.md)" },
+    { "id": "NFR8.1", "status": "OK", "target": "Bind to 127.0.0.1 (security-design.md)" },
+    { "id": "NFR8.2", "status": "OK", "target": "Id format and paging validation, 404/422 (security-design.md)" },
+    { "id": "NFR8.3", "status": "OK", "target": "Stateless read-only app, per-request SQLite connection (scalability-design.md)" }
+  ]
+}

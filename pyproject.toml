@@ -1,0 +1,61 @@
+[project]
+name = "listenbrainz-recs"
+version = "0.1.0"
+description = "Similar-artist recommendations from ListenBrainz listening data via ALS collaborative filtering"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "faiss-cpu",
+    "fastapi",
+    "numpy",
+    "pandas<3",
+    "pyarrow",
+    "pyspark",
+    "uvicorn",
+]
+
+[project.scripts]
+listenbrainz-recs-prepare = "listenbrainz_recs.prep:main"
+listenbrainz-recs-train = "listenbrainz_recs.train:main"
+listenbrainz-recs-index = "listenbrainz_recs.index:main"
+listenbrainz-recs-serve = "listenbrainz_recs.app.main:main"
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "ruff==0.17.2",
+    "httpx==0.28.1",
+    "ty==0.0.92",
+]
+
+[build-system]
+requires = ["uv_build>=0.9,<0.14"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+# Only our own Python: never the workflow folders (.claude, aidlc) or Markdown.
+include = ["src/**/*.py", "tests/**/*.py", "scripts/**/*.py", "pyproject.toml"]
+extend-exclude = [".claude", "aidlc"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+
+[tool.ty.src]
+include = ["src", "tests"]
+
+[tool.ty.environment]
+extra-paths = ["tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+
+[tool.coverage.run]
+source = ["listenbrainz_recs"]
+branch = false
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
