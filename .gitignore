@@ -45,3 +45,6 @@ htmlcov/
 spark-warehouse/
 metastore_db/
 derby.log
+
+# JetBrains IDE
+.idea/
