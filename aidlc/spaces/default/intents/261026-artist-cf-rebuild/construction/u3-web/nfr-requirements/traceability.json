@@ -1,0 +1,15 @@
+{
+  "stage": "nfr-requirements",
+  "unit": "u3-web",
+  "upstream_ids": ["NFR1", "NFR2", "NFR3", "NFR4", "NFR5", "NFR6", "NFR7", "NFR8"],
+  "coverage": [
+    { "id": "NFR1", "status": "OK", "target": "NFR1.11, NFR1.12, NFR1.13, NFR1.14, NFR1.15" },
+    { "id": "NFR2", "status": "OK", "target": "NFR2.16, NFR2.17, NFR2.18, NFR2.19, NFR2.20, NFR2.21, NFR2.22, NFR2.23" },
+    { "id": "NFR3", "status": "OK", "target": "NFR3.9, NFR3.10, NFR3.11, NFR3.12, NFR3.13" },
+    { "id": "NFR4", "status": "OK", "target": "NFR4.3" },
+    { "id": "NFR5", "status": "OK", "target": "NFR5.3" },
+    { "id": "NFR6", "status": "N/A", "target": "pre-merge check is a process rule enforced by scripts/check.sh at Code Generation and Build and Test" },
+    { "id": "NFR7", "status": "N/A", "target": "testing rules are applied at Code Generation per team practices" },
+    { "id": "NFR8", "status": "OK", "target": "NFR8.7, NFR8.8, NFR8.9, NFR8.10" }
+  ]
+}

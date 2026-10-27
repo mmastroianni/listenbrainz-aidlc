@@ -1,0 +1,37 @@
+{
+  "stage": "nfr-design",
+  "unit": "u3-web",
+  "upstream_ids": [
+    "NFR1.11", "NFR1.12", "NFR1.13", "NFR1.14", "NFR1.15",
+    "NFR2.16", "NFR2.17", "NFR2.18", "NFR2.19", "NFR2.20", "NFR2.21", "NFR2.22", "NFR2.23",
+    "NFR3.9", "NFR3.10", "NFR3.11", "NFR3.12", "NFR3.13",
+    "NFR4.3", "NFR5.3",
+    "NFR8.7", "NFR8.8", "NFR8.9", "NFR8.10"
+  ],
+  "coverage": [
+    { "id": "NFR1.11", "status": "OK", "target": "One catalogue call, no web-layer sorting; full-size timing by the speed command (performance-design.md)" },
+    { "id": "NFR1.12", "status": "OK", "target": "One index search and one batched catalogue lookup per page (performance-design.md)" },
+    { "id": "NFR1.13", "status": "OK", "target": "Fixture timing test through the test client (performance-design.md)" },
+    { "id": "NFR1.14", "status": "OK", "target": "Three hand-written files under 100 KB (performance-design.md)" },
+    { "id": "NFR1.15", "status": "OK", "target": "150 ms pause, one request per action, busy flag (performance-design.md)" },
+    { "id": "NFR2.16", "status": "OK", "target": "Endpoints built only after the startup checks pass (reliability-design.md)" },
+    { "id": "NFR2.17", "status": "OK", "target": "One error state with Retry, no codes shown (reliability-design.md)" },
+    { "id": "NFR2.18", "status": "OK", "target": "Catalogue asked when the index says unknown (reliability-design.md)" },
+    { "id": "NFR2.19", "status": "OK", "target": "Request counters and a busy flag (reliability-design.md)" },
+    { "id": "NFR2.20", "status": "OK", "target": "Unexpected-error handler with ERROR stack trace (reliability-design.md)" },
+    { "id": "NFR2.21", "status": "OK", "target": "Request log of path only (observability-design.md)" },
+    { "id": "NFR2.22", "status": "OK", "target": "GET /api/health unchanged (observability-design.md)" },
+    { "id": "NFR2.23", "status": "OK", "target": "Counts-only printout from the quality-check commands (observability-design.md)" },
+    { "id": "NFR3.9", "status": "OK", "target": "Allow-list function for every artist in a response (security-design.md)" },
+    { "id": "NFR3.10", "status": "OK", "target": "textContent and createElement only, script text check (security-design.md)" },
+    { "id": "NFR3.11", "status": "OK", "target": "Short JSON error handlers; the page uses its own wording (security-design.md)" },
+    { "id": "NFR3.12", "status": "OK", "target": "Header middleware with CSP, no-sniff, no-referrer (security-design.md)" },
+    { "id": "NFR3.13", "status": "OK", "target": "Request log excludes the query string (security-design.md)" },
+    { "id": "NFR4.3", "status": "OK", "target": "No outside resources; scan test and link prefix check (security-design.md)" },
+    { "id": "NFR5.3", "status": "OK", "target": "Sheet in docs/, artist-level fields only (security-design.md)" },
+    { "id": "NFR8.7", "status": "OK", "target": "127.0.0.1 default host (security-design.md)" },
+    { "id": "NFR8.8", "status": "OK", "target": "Id pattern, text limit and paging ranges give 422 or 404 (security-design.md)" },
+    { "id": "NFR8.9", "status": "OK", "target": "Threaded sync routes and a shared read-only connection behind a lock (scalability-design.md)" },
+    { "id": "NFR8.10", "status": "OK", "target": "No sessions, cookies or caches (scalability-design.md)" }
+  ]
+}

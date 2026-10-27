@@ -1,4 +1,8 @@
-"""WebApp: the similar-artists endpoint and health check (contract C3; BR4.2, BR4.3, BR5.x).
+"""WebApp: the page, the suggestion and similar-artists endpoints, health (contract C3).
+
+Serves `/` and `/artist/{mbid}` (one page, BR3.1), `GET /api/suggest` (BR1.1, BR1.2),
+`GET /api/artists/{mbid}/similar` (BR2.1 to BR2.5) and `GET /api/health`. Every answer carries the
+page headers (NFR3.12), and the request log holds the path only, never the query (NFR3.13).
 
 Start it with `uv run listenbrainz-recs-serve`. It binds 127.0.0.1 unless told otherwise.
 """
@@ -17,7 +21,8 @@ import uvicorn
 from fastapi import FastAPI, Query, Request
 from fastapi import Path as PathParam
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
@@ -30,6 +35,16 @@ from listenbrainz_recs.store import load_store
 DEFAULT_HOST = "127.0.0.1"  # NFR8.1: local only; changing it is a deliberate flag
 DEFAULT_PORT = 8000
 DEFAULT_LIMIT = 20
+MAX_QUERY_LENGTH = 200  # BR1.2
+STATIC_DIR = Path(__file__).parent / "static"
+# NFR3.12: only the app's own files, no framing, no sniffing, no referrer sent to link targets.
+PAGE_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    ),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+}
 MBID_PATTERN = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 
 access_log = logging.getLogger("listenbrainz_recs.access")
@@ -72,6 +87,13 @@ def create_app(models_dir: Path | None = None) -> FastAPI:
         store.close()
 
     app = FastAPI(title="Similar Artists", version="1", lifespan=lifespan)
+    app.state.store = store
+
+    @app.middleware("http")
+    async def add_page_headers(request: Request, call_next) -> Response:  # noqa: ANN001
+        response = await call_next(request)
+        response.headers.update(PAGE_HEADERS)
+        return response
 
     @app.middleware("http")
     async def log_requests(request: Request, call_next) -> Response:  # noqa: ANN001
@@ -119,6 +141,11 @@ def create_app(models_dir: Path | None = None) -> FastAPI:
             "artists": store.manifest.artist_count,
         }
 
+    @app.get("/api/suggest")
+    def suggest(q: Annotated[str, Query(max_length=MAX_QUERY_LENGTH)]) -> list[dict[str, object]]:
+        """Up to 10 artists for the typed text, in the catalogue's order (BR1.1)."""
+        return [public_artist(artist) for artist in catalog.suggest(q, limit=10)]
+
     @app.get("/api/artists/{mbid}/similar")
     def similar(
         mbid: Annotated[str, PathParam(pattern=MBID_PATTERN)],
@@ -126,7 +153,14 @@ def create_app(models_dir: Path | None = None) -> FastAPI:
         limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
     ) -> dict[str, object]:
         mbid = mbid.lower()
-        page = similarity.neighbours(mbid, offset=offset, limit=limit)  # raises UnknownArtist
+        try:
+            page = similarity.neighbours(mbid, offset=offset, limit=limit)
+        except UnknownArtist:
+            # BR2.3: known to the catalogue but not the index means too little data, not unknown.
+            known = catalog.get(mbid)
+            if known is None:
+                raise  # BR2.5: unknown everywhere, answered 404
+            return {"artist": public_artist(known), "items": [], "has_more": False}
         top = page.items[0].cosine if offset == 0 and page.items else None
         if top is None and offset > 0:
             first = similarity.neighbours(mbid, offset=0, limit=1).items
@@ -153,6 +187,13 @@ def create_app(models_dir: Path | None = None) -> FastAPI:
             )
         return {"artist": public_artist(subject), "items": items, "has_more": page.has_more}
 
+    @app.get("/", include_in_schema=False)
+    @app.get("/artist/{mbid}", include_in_schema=False)
+    def page(mbid: str = "") -> FileResponse:
+        """The one page for both addresses; it reads the id itself (BR3.1)."""
+        return FileResponse(STATIC_DIR / "index.html", media_type="text/html")
+
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app
 
 

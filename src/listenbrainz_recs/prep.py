@@ -1,228 +1,289 @@
-"""ListeningDataPrep: turn the first 5,000 dump lines into anonymous listen counts.
+"""ListeningDataPrep: turn the listening dump into anonymous listen counts (BR1.3 to BR1.8, BR3.2).
 
-Keeps only (listener number, artist id, listen count) per entry, plus an artist-id to
-artist-name table. No other listener detail is stored (BR1.4, NFR3.1).
+Runs in Spark with an explicit column layout, so growth in the dump is a longer run and not a
+larger Python memory footprint (NFR1.10). Per run it:
+
+- counts and skips malformed lines and unusable entries (BR1.3, BR1.4),
+- adds up repeated entries for one listener and artist (BR1.6),
+- keeps artists with at least 5 distinct listeners (BR1.7),
+- picks each kept artist's most used name (BR3.2),
+- writes only (listener number, artist id, listen count) per row, the artist names, the kept
+  artists' listener counts, a report, and a marker last (BR1.5, BR1.8, BR6.1).
+
+The dump is only read (BR1.2). Output shows counts only, never a listener number (NFR3.6).
 """
 
-import json
 import sys
 import time
-from collections import Counter
-from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-import pyarrow as pa
-import pyarrow.parquet as pq
+from pyspark import StorageLevel
+from pyspark.sql import Column, DataFrame, SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql.types import ArrayType, LongType, StringType, StructField, StructType
 
-from listenbrainz_recs import fsutil
-from listenbrainz_recs.dump_source import dump_label, locate_listening_dump, read_lines
+from listenbrainz_recs import fsutil, steps
+from listenbrainz_recs.dump_source import check_dump_files, dump_label, read_lines
 from listenbrainz_recs.errors import DataError, RecsError
 from listenbrainz_recs.paths import (
+    ARTIST_LISTENERS_DIR,
     ARTIST_NAMES_DIR,
     INTERACTIONS_DIR,
-    PREPARED_MARKER,
-    TRAINED_MARKER,
+    SPARK_TEMP_DIR,
+    OutputPaths,
+    output_paths,
 )
 from listenbrainz_recs.settings import load_settings
+from listenbrainz_recs.spark import get_spark, spark_failure
 
-SAMPLE_LINES = 5_000  # BR1.3: the skeleton reads only the first 5,000 listener lines
-BATCH_ROWS = 50_000
-MAX_LISTENER_NUMBER = 2**31 - 1  # Spark ALS needs integer listener numbers
+MIN_LISTENERS = 5  # BR1.7: an artist needs this many distinct listeners
+MAX_INT = 2**31 - 1  # listener numbers and counts must fit Spark ALS's integer columns
 
-INTERACTION_SCHEMA = pa.schema(
+# The listening dump's own layout: one JSON object per line (BR1.3).
+LINE_SCHEMA = StructType(
     [
-        ("user_id", pa.int32()),
-        ("artist_mbid", pa.string()),
-        ("listen_count", pa.int32()),
+        StructField("user_id", LongType()),
+        StructField(
+            "data",
+            ArrayType(
+                StructType(
+                    [
+                        StructField("artist_mbid", StringType()),
+                        StructField("artist_name", StringType()),
+                        StructField("listen_count", LongType()),
+                    ]
+                )
+            ),
+        ),
     ]
 )
-NAME_SCHEMA = pa.schema([("artist_mbid", pa.string()), ("artist_name", pa.string())])
 
 
 @dataclass
 class PrepSummary:
-    """Counters for the one-line run summary (NFR2.5)."""
+    """Counters for the one-line run summary and the report (NFR2.13, NFR2.14)."""
 
+    run_id: str
     source_dump: str
     lines_read: int = 0
-    lines_skipped: int = 0
-    entries_skipped: int = 0
-    listeners: int = 0
+    valid_records: int = 0
+    skipped_records: int = 0
+    skipped_entries: int = 0
     rows: int = 0
     artists: int = 0
     seconds: float = 0.0
 
     def line(self) -> str:
         return (
-            f"prepare: read {self.lines_read} lines ({self.lines_skipped} skipped), "
-            f"{self.entries_skipped} entries skipped, {self.listeners} listeners, "
-            f"{self.rows} listen counts, {self.artists} artists kept, "
-            f"wrote {INTERACTIONS_DIR}/ and {ARTIST_NAMES_DIR}/ in {self.seconds:.1f}s"
+            f"prepare: read {self.lines_read} lines ({self.skipped_records} skipped), "
+            f"{self.skipped_entries} entries skipped, {self.rows} listen counts, "
+            f"{self.artists} artists kept, wrote {INTERACTIONS_DIR}/, {ARTIST_NAMES_DIR}/ and "
+            f"{ARTIST_LISTENERS_DIR}/ in {self.seconds:.1f}s"
         )
 
 
-def parse_line(line: str) -> tuple[int, list[object]] | None:
-    """Return (listener number, raw entries) for one dump line, or None if the line is unusable."""
-    try:
-        record = json.loads(line)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(record, dict):
-        return None
-    user_id = record.get("user_id")
-    entries = record.get("data")
-    if (
-        isinstance(user_id, bool)
-        or not isinstance(user_id, int)
-        or not 0 <= user_id <= MAX_LISTENER_NUMBER
-        or not isinstance(entries, list)
-    ):
-        return None
-    return user_id, entries
-
-
-def usable_entry(entry: object) -> tuple[str, str, int] | None:
-    """Return (artist id, artist name, listen count), or None if the entry is skipped (BR1.5)."""
-    if not isinstance(entry, dict):
-        return None
-    mbid = entry.get("artist_mbid")
-    count = entry.get("listen_count")
-    if not isinstance(mbid, str) or not mbid.strip():
-        return None
-    if isinstance(count, bool) or not isinstance(count, int) or count < 1:
-        return None
-    if count > MAX_LISTENER_NUMBER:
-        return None
-    name = entry.get("artist_name")
-    return mbid.strip(), name.strip() if isinstance(name, str) else "", count
-
-
-class _InteractionWriter:
-    """Writes listen counts to Parquet in batches so memory stays flat."""
-
-    def __init__(self, folder: Path) -> None:
-        folder.mkdir(parents=True, exist_ok=True)
-        self._writer = pq.ParquetWriter(folder / "part-0.parquet", INTERACTION_SCHEMA)
-        self._users: list[int] = []
-        self._mbids: list[str] = []
-        self._counts: list[int] = []
-
-    def add(self, user_id: int, mbid: str, count: int) -> None:
-        self._users.append(user_id)
-        self._mbids.append(mbid)
-        self._counts.append(count)
-        if len(self._users) >= BATCH_ROWS:
-            self.flush()
-
-    def flush(self) -> None:
-        if not self._users:
-            return
-        table = pa.table(
-            {"user_id": self._users, "artist_mbid": self._mbids, "listen_count": self._counts},
-            schema=INTERACTION_SCHEMA,
-        )
-        self._writer.write_table(table)
-        self._users, self._mbids, self._counts = [], [], []
-
-    def close(self) -> None:
-        self.flush()
-        self._writer.close()
-
-
-def _collect(
-    lines: Iterable[str], writer: _InteractionWriter, summary: PrepSummary
-) -> dict[str, Counter[str]]:
-    """Parse lines, write usable counts, and return the names seen per artist id."""
-    names: dict[str, Counter[str]] = {}
-    seen_artists: set[str] = set()
-    for line in lines:
-        summary.lines_read += 1
-        parsed = parse_line(line)
-        if parsed is None:
-            summary.lines_skipped += 1
-            continue
-        user_id, entries = parsed
-        per_artist: dict[str, int] = {}
-        for entry in entries:
-            usable = usable_entry(entry)
-            if usable is None:
-                summary.entries_skipped += 1
-                continue
-            mbid, name, count = usable
-            per_artist[mbid] = per_artist.get(mbid, 0) + count  # (listener, artist) is unique
-            if name:
-                names.setdefault(mbid, Counter())[name] += 1
-        if not per_artist:
-            continue
-        summary.listeners += 1
-        for mbid, count in per_artist.items():
-            writer.add(user_id, mbid, min(count, MAX_LISTENER_NUMBER))
-            summary.rows += 1
-            seen_artists.add(mbid)
-    summary.artists = len(seen_artists)
-    for mbid in seen_artists:
-        names.setdefault(mbid, Counter())
-    return names
-
-
-def prepare(data_root: Path | None, work_dir: Path, max_lines: int = SAMPLE_LINES) -> PrepSummary:
-    """Run the prepare step and return its summary. Raises `RecsError` subclasses on failure."""
-    started = time.perf_counter()
-    dump_file = locate_listening_dump(data_root)  # BR1.1: stops before anything is written
-    summary = PrepSummary(source_dump=dump_label(dump_file))
-
-    work_dir.mkdir(parents=True, exist_ok=True)
-    marker = work_dir / PREPARED_MARKER
-    fsutil.clear(marker)  # an interrupted run must not look finished
-    fsutil.clear(work_dir / TRAINED_MARKER)
-
-    interactions_final = work_dir / INTERACTIONS_DIR
-    names_final = work_dir / ARTIST_NAMES_DIR
-    interactions_tmp = fsutil.tmp_path(interactions_final)
-    names_tmp = fsutil.tmp_path(names_final)
-    fsutil.clear(interactions_tmp)
-    fsutil.clear(names_tmp)
-
-    writer = _InteractionWriter(interactions_tmp)
-    try:
-        names = _collect(read_lines(dump_file, max_lines), writer, summary)
-    except OSError as exc:
-        raise DataError(f"Failed while reading or writing prepared data: {exc}") from exc
-    finally:
-        writer.close()
-
-    if summary.rows == 0:
-        raise DataError(f"No usable listen counts in the first {max_lines} lines of {dump_file}.")
-
-    names_tmp.mkdir(parents=True, exist_ok=True)
-    mbids = sorted(names)
-    pq.write_table(
-        pa.table(
-            {
-                "artist_mbid": mbids,
-                "artist_name": [names[m].most_common(1)[0][0] if names[m] else "" for m in mbids],
-            },
-            schema=NAME_SCHEMA,
-        ),
-        names_tmp / "part-0.parquet",
+def _is_usable(entry: Column) -> Column:
+    """An entry with an artist id and a listen count of at least 1 (BR1.4)."""
+    return (
+        entry["artist_mbid"].isNotNull()
+        & (F.trim(entry["artist_mbid"]) != "")
+        & entry["listen_count"].isNotNull()
+        & (entry["listen_count"] >= 1)
     )
 
-    fsutil.publish(interactions_tmp, interactions_final)
-    fsutil.publish(names_tmp, names_final)
+
+def _read_text_lines(spark: SparkSession, dump_file: Path, max_lines: int | None) -> DataFrame:
+    """The dump's lines as a one-column (`value`) DataFrame; a sample reads the first N lines."""
+    if max_lines is None:
+        return spark.read.text(str(dump_file))
+    sample = [(line.rstrip("\r\n"),) for line in read_lines(dump_file, max_lines)]
+    return spark.createDataFrame(sample, "value string")
+
+
+def _parse(lines: DataFrame) -> DataFrame:
+    """One row per line: listener number, entries, and whether the line is usable (BR1.3)."""
+    record = F.from_json(F.col("value"), LINE_SCHEMA)
+    parsed = lines.select(record["user_id"].alias("user_id"), record["data"].alias("data"))
+    valid = (
+        F.col("user_id").isNotNull()
+        & F.col("data").isNotNull()
+        & F.col("user_id").between(0, MAX_INT)
+    )
+    return parsed.withColumn("valid", valid)
+
+
+def _write(frame: DataFrame, target: Path) -> None:
+    fsutil.clear(target)
+    frame.write.mode("overwrite").parquet(str(target))
+
+
+def _build_outputs(
+    spark: SparkSession, parsed: DataFrame, paths: OutputPaths, summary: PrepSummary
+) -> dict[str, Path]:
+    """Compute the three outputs into temporary folders and fill in the summary counts."""
+    stats = parsed.agg(
+        F.count(F.lit(1)).alias("total"),
+        F.sum(F.col("valid").cast("int")).alias("valid"),
+        F.sum(
+            F.when(
+                F.col("valid"),
+                F.size(F.col("data")) - F.size(F.filter(F.col("data"), _is_usable)),
+            ).otherwise(0)
+        ).alias("bad_entries"),
+    ).first()
+    total = int(stats["total"] or 0) if stats else 0
+    summary.lines_read = total
+    summary.valid_records = int(stats["valid"] or 0) if stats else 0
+    summary.skipped_records = total - summary.valid_records
+    summary.skipped_entries = int(stats["bad_entries"] or 0) if stats else 0
+    if summary.valid_records == 0:
+        raise DataError(
+            f"No usable listener line in the listening dump: all {total} lines were malformed."
+        )
+
+    entries = (
+        parsed.where(F.col("valid"))
+        .select("user_id", F.explode(F.filter(F.col("data"), _is_usable)).alias("e"))
+        .select(
+            F.col("user_id").cast("int").alias("user_id"),  # range checked with the line
+            F.trim(F.col("e.artist_mbid")).alias("artist_mbid"),
+            F.nullif(F.trim(F.col("e.artist_name")), F.lit("")).alias("artist_name"),
+            F.col("e.listen_count").alias("listen_count"),
+        )
+    )
+    counts = entries.groupBy("user_id", "artist_mbid").agg(  # BR1.6: repeats are added together
+        F.least(F.sum("listen_count"), F.lit(MAX_INT)).cast("int").alias("listen_count")
+    )
+    counts.persist(StorageLevel.DISK_ONLY)
+
+    tmp = {
+        "listeners": fsutil.tmp_path(paths.artist_listeners),
+        "interactions": fsutil.tmp_path(paths.interactions),
+        "names": fsutil.tmp_path(paths.artist_names),
+    }
+    try:
+        listeners = (
+            counts.groupBy("artist_mbid")
+            .agg(F.count(F.lit(1)).cast("int").alias("listener_count"))
+            .where(F.col("listener_count") >= MIN_LISTENERS)  # BR1.7: 4 is out, 5 is in
+        )
+        _write(listeners, tmp["listeners"])
+        kept = spark.read.parquet(str(tmp["listeners"]))
+        summary.artists = kept.count()
+        if summary.artists == 0:
+            raise DataError(
+                f"No artist has at least {MIN_LISTENERS} listeners in the {total} lines read."
+            )
+
+        _write(
+            counts.join(kept.select("artist_mbid"), "artist_mbid", "left_semi").select(
+                "user_id", "artist_mbid", "listen_count"
+            ),
+            tmp["interactions"],
+        )
+        summary.rows = spark.read.parquet(str(tmp["interactions"])).count()
+
+        # BR3.2: the spelling used by the most listeners; ties go to the alphabetically first.
+        spellings = (
+            entries.where(F.col("artist_name").isNotNull())
+            .select("user_id", "artist_mbid", "artist_name")
+            .distinct()
+            .join(kept.select("artist_mbid"), "artist_mbid", "left_semi")
+            .groupBy("artist_mbid", "artist_name")
+            .agg(F.count(F.lit(1)).alias("listeners"))
+            .groupBy("artist_mbid")
+            .agg(
+                F.min(F.struct((-F.col("listeners")).alias("neg"), F.col("artist_name"))).alias("b")
+            )
+            .select("artist_mbid", F.col("b.artist_name").alias("artist_name"))
+        )
+        names = (
+            kept.select("artist_mbid")
+            .join(spellings, "artist_mbid", "left")
+            .select("artist_mbid", F.coalesce(F.col("artist_name"), F.lit("")).alias("artist_name"))
+        )
+        _write(names, tmp["names"])
+    except BaseException:
+        for folder in tmp.values():
+            fsutil.clear(folder)
+        raise
+    finally:
+        counts.unpersist()
+    return tmp
+
+
+def prepare(
+    data_root: Path | None,
+    work_dir: Path,
+    spark: SparkSession | None = None,
+    *,
+    max_lines: int | None = None,
+) -> PrepSummary:
+    """Run the prepare step and return its summary. Raises `RecsError` subclasses on failure.
+
+    `max_lines` limits the run to the first N listener lines (a sample run); None reads the whole
+    dump. The settings and dump checks run first, so a failure there writes nothing (BR1.1).
+    """
+    started = time.perf_counter()
+    files = check_dump_files(data_root)  # BR1.1: stops before anything is written
+    paths = output_paths(work_dir, work_dir)  # prepare writes only under the work folder
+    summary = PrepSummary(run_id=steps.new_run_id(), source_dump=dump_label(files.listening))
+
+    work_dir.mkdir(parents=True, exist_ok=True)
+    steps.clear_marker(work_dir, steps.PREPARE)  # an interrupted run must not look finished
+    session = spark if spark is not None else get_spark("listenbrainz-recs-prepare")
+    try:
+        parsed = _parse(_read_text_lines(session, files.listening, max_lines))
+        parsed.persist(StorageLevel.DISK_ONLY)
+        try:
+            tmp = _build_outputs(session, parsed, paths, summary)
+        finally:
+            parsed.unpersist()
+    except RecsError:
+        raise
+    except Exception as exc:  # integration boundary: Spark/JVM failures surface as many types
+        raise spark_failure("prepare", exc) from exc
+
+    fsutil.publish(tmp["listeners"], paths.artist_listeners)
+    fsutil.publish(tmp["interactions"], paths.interactions)
+    fsutil.publish(tmp["names"], paths.artist_names)
     summary.seconds = time.perf_counter() - started
-    fsutil.write_json_atomic(marker, {"step": "prepare", **asdict(summary)})
+    report = {
+        "run_id": summary.run_id,
+        "run_timestamp": steps.now_utc(),
+        "source_dump": summary.source_dump,
+        "valid_records": summary.valid_records,
+        "skipped_records": summary.skipped_records,
+        "skipped_entries": summary.skipped_entries,
+        "kept_artists": summary.artists,
+    }
+    fsutil.write_json_atomic(paths.prepare_report, report)  # BR1.8
+    steps.write_marker(work_dir, steps.PREPARE, run_id=summary.run_id, details=asdict(summary))
     return summary
 
 
 def main() -> int:
     """Command entry point: `uv run listenbrainz-recs-prepare`."""
-    settings = load_settings()
+    spark: SparkSession | None = None
     try:
-        summary = prepare(settings.data_root, settings.work_dir)
+        settings = load_settings()
+        # Fail on a bad location before a Spark session is started (BR1.1).
+        check_dump_files(settings.data_root)
+        spark = get_spark(
+            "listenbrainz-recs-prepare",
+            memory=settings.spark_memory,
+            local_dir=settings.work_dir / SPARK_TEMP_DIR,
+        )
+        summary = prepare(
+            settings.data_root, settings.work_dir, spark, max_lines=settings.prep_max_lines
+        )
     except RecsError as exc:
         print(f"prepare failed: {exc}", file=sys.stderr)
         return 1
+    finally:
+        if spark is not None:
+            spark.stop()
     print(summary.line())
     return 0
 

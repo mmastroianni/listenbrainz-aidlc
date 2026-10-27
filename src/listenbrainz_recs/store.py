@@ -17,6 +17,9 @@ from listenbrainz_recs.paths import (
     FAISS_INDEX_FILE,
 )
 
+# The tables the catalogue step writes and the lookups read.
+CATALOGUE_TABLES = frozenset({"artist", "artist_genre", "artist_name_index", "artist_search"})
+
 
 @dataclass
 class ModelStore:
@@ -67,12 +70,27 @@ def load_store(models_dir: Path) -> ModelStore:
     db_uri = (models_dir / ARTISTS_DB_FILE).resolve().as_uri() + "?mode=ro"
     try:
         db = sqlite3.connect(db_uri, uri=True, check_same_thread=False)
+        tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if not tables >= CATALOGUE_TABLES:
+            db.close()
+            missing = ", ".join(sorted(CATALOGUE_TABLES - tables))
+            raise StartupError(
+                f"{ARTISTS_DB_FILE} lacks table(s) {missing}. "
+                "Re-run the catalogue step: uv run listenbrainz-recs-catalogue"
+            )
         (rows,) = db.execute("SELECT COUNT(*) FROM artist").fetchone()
     except sqlite3.Error as exc:
-        raise StartupError(f"{ARTISTS_DB_FILE} cannot be read ({exc}). {rerun}") from exc
-    if rows != len(ids):
+        raise StartupError(
+            f"{ARTISTS_DB_FILE} cannot be read ({exc}). "
+            "Re-run the catalogue step: uv run listenbrainz-recs-catalogue"
+        ) from exc
+    # The catalogue holds every kept artist; the index holds those with a usable vector, so the
+    # catalogue may have more artists than the index but never fewer.
+    if rows < len(ids):
         db.close()
-        raise StartupError(f"{ARTISTS_DB_FILE} holds {rows} artists, expected {len(ids)}. {rerun}")
+        raise StartupError(
+            f"{ARTISTS_DB_FILE} holds {rows} artists but the index has {len(ids)}. {rerun}"
+        )
 
     return ModelStore(
         manifest=manifest,

@@ -1,0 +1,17 @@
+# Security Design — u2-pipeline
+
+Designs `construction/u2-pipeline/nfr-requirements/security-requirements.md` (NFR3.4 to NFR3.8, NFR4.2, NFR5.2, NFR8.4, NFR8.5), using the functional design (`construction/u2-pipeline/functional-design/rules.md`), contract C2 in `inception/contract-design/contract-summary.md`, the skeleton's security design (`construction/u1-skeleton/nfr-design/security-design.md`) and the project hard rules.
+
+| Requirement | Design |
+|-------------|--------|
+| NFR3.4 prepared data holds no listener detail | The prepare step reads each listener line, then keeps the three columns listener number, artist id and listen count. Names are taken per artist (most used spelling, BR3.2) into a separate artist name file, so a name is never tied to a listener. The output schema is fixed in one place and a test compares it to those columns. |
+| NFR3.5 built files hold no listener data | The catalogue step reads only the artist name file, the kept artist list with listener counts (a number per artist) and the MusicBrainz tables. The index step reads only vectors and the catalogue. No built-file writer receives a listener number as input, so none can write one. Tests open each built file from the fixture build and look for the fixture's listener numbers. |
+| NFR3.6 output shows counts only | Each step prints through one summary function that accepts counts, file names and durations only. Skipped lines are counted, not printed; a malformed line's text is never echoed, because it could contain listener data. |
+| NFR3.7 dumps read-only | DumpSource is the only code that opens a dump path, and it opens in read mode. The settings module returns the models and data folders, which are checked to sit outside the dump folder. Tests take checksums and modification times of the fixture dump before and after each step, and run a step on a read-only copy. |
+| NFR3.8 bad location writes nothing | Each step that reads a dump calls DumpSource's check first and creates no output folder until the check passes. A test points the setting at an empty folder and lists the output folders. |
+| NFR4.2 no remote service | Spark is started with a local master. The code has no HTTP client and no download step. A test reads the Spark session's master setting. |
+| NFR5.2 output only in ignored folders | One function builds every output path from the data and models folders. `.gitignore` lists both, and the check script fails when a tracked file sits under them. A test lists the files a fixture run created and checks that each is under those folders. |
+| NFR8.4 no network port from the pipeline | The Spark session setup from the skeleton keeps the web page off and binds the driver to 127.0.0.1; a test reads those settings. |
+| NFR8.5 typed text is only a value | Suggestion text is normalised first (BR4.1), which leaves only letters, digits and single spaces. The sorted name index is queried with a bound parameter. The full-text query is built only from normalised words, each wrapped in quotes with a trailing star, so no query syntax can come from the user. Tests send quotes, percent signs, stars, `OR 1=1` and a 200-character string and expect normal matches or an empty list. |
+
+No authentication, encryption or secrets are needed: the pipeline is local, anonymous and works on public data plus anonymous listener numbers. Names and descriptions come from public dumps and are treated as plain text; the web unit escapes them on the page.

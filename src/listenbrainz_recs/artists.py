@@ -1,4 +1,14 @@
-"""ArtistCatalog: artist details and name suggestions from `artists.sqlite` (contract C1)."""
+"""ArtistCatalog: artist details and name suggestions from `artists.sqlite` (contract C1).
+
+Suggestions come in four tiers (BR4.4): the name equals the typed text; the name starts with it;
+every typed word starts some word of the name; each tier ordered by popularity (more listeners,
+then name, then id). The catalogue step numbers artists by that order, so every query below reads
+its rows already in the final order and stops after the first few; nothing is sorted over all
+matches except the starts-with range, which is limited by the sorted index (NFR1.6).
+
+Typed text is normalised first (BR4.1), leaving only letters, digits and single spaces, and is then
+only ever a bound parameter or a quoted word in the full-text query, never query syntax (NFR8.5).
+"""
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -8,6 +18,7 @@ from listenbrainz_recs.text import normalize_name
 
 MAX_SUGGESTIONS = 10
 SQLITE_BATCH = 500  # stays well below SQLite's bound-variable limit
+_AFTER_ANY_TEXT = "\U0010ffff"  # sorts after every character a normalised name can hold
 
 
 @dataclass(frozen=True)
@@ -19,9 +30,9 @@ class ArtistSummary:
     genres: list[str] = field(default_factory=list)
 
 
-def _like_pattern(text: str, *, prefix_only: bool) -> str:
-    escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return f"{escaped}%" if prefix_only else f"%{escaped}%"
+def _word_query(words: list[str]) -> str:
+    """A full-text query where every word is a quoted word start; words hold no query syntax."""
+    return " ".join(f'"{word}"*' for word in words)
 
 
 class ArtistCatalog:
@@ -59,28 +70,48 @@ class ArtistCatalog:
         return found
 
     def suggest(self, text: str, limit: int = MAX_SUGGESTIONS) -> list[ArtistSummary]:
-        """Up to 10 artists whose name contains `text`, ignoring case and accents.
+        """Up to 10 artists matching the typed `text`, closest first (BR4.3 to BR4.7).
 
-        Closest match first (exact, then prefix, then contains), then most listeners first.
-        Whitespace-only text returns [].
+        Ignores case and accents and treats punctuation as a space. Text with no letters or digits
+        returns []. A larger `limit` is capped at 10, not refused.
         """
         query = normalize_name(text)
         if not query:
             return []
         limit = max(1, min(limit, MAX_SUGGESTIONS))
+        order: list[str] = []
         with self._store.db_lock:
-            rows = self._store.db.execute(
-                "SELECT a.mbid FROM artist_search s JOIN artist a ON a.mbid = s.mbid "
-                "WHERE s.norm_name LIKE ? ESCAPE '\\' "
-                "ORDER BY (s.norm_name = ?) DESC, (s.norm_name LIKE ? ESCAPE '\\') DESC, "
-                "a.listener_count DESC, a.name LIMIT ?",
-                (
-                    _like_pattern(query, prefix_only=False),
-                    query,
-                    _like_pattern(query, prefix_only=True),
-                    limit,
-                ),
-            ).fetchall()
-        order = [mbid for (mbid,) in rows]
+            for fetch in (self._exact, self._starts_with, self._word_starts):
+                for mbid in fetch(query, limit + len(order)):
+                    if mbid not in order:
+                        order.append(mbid)
+                if len(order) >= limit:
+                    break
+        order = order[:limit]
         summaries = self.get_many(order)
         return [summaries[m] for m in order if m in summaries]
+
+    def _exact(self, query: str, limit: int) -> list[str]:
+        """Tier 0: the name equals the text, most popular first."""
+        rows = self._store.db.execute(
+            "SELECT mbid FROM artist_name_index WHERE norm_name = ? ORDER BY popularity LIMIT ?",
+            (query, limit),
+        ).fetchall()
+        return [mbid for (mbid,) in rows]
+
+    def _starts_with(self, query: str, limit: int) -> list[str]:
+        """Tier 1: the name starts with the text, most popular first."""
+        rows = self._store.db.execute(
+            "SELECT mbid FROM artist_name_index WHERE norm_name >= ? AND norm_name < ? "
+            "ORDER BY popularity LIMIT ?",
+            (query, query + _AFTER_ANY_TEXT, limit),
+        ).fetchall()
+        return [mbid for (mbid,) in rows]
+
+    def _word_starts(self, query: str, limit: int) -> list[str]:
+        """Tier 2: every typed word starts a word of the name; rows come in popularity order."""
+        rows = self._store.db.execute(
+            "SELECT mbid FROM artist_search WHERE artist_search MATCH ? ORDER BY rowid LIMIT ?",
+            (_word_query(query.split()), limit),
+        ).fetchall()
+        return [mbid for (mbid,) in rows]

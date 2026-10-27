@@ -15,7 +15,7 @@ from fixtures.sample_data import artist_mbid
 
 from listenbrainz_recs.app.main import DEFAULT_HOST, create_app, main
 from listenbrainz_recs.errors import StartupError
-from listenbrainz_recs.paths import C2_FILES, MANIFEST_FILE
+from listenbrainz_recs.paths import ARTISTS_DB_FILE, C2_FILES, MANIFEST_FILE
 from listenbrainz_recs.similarity import SimilarityIndex
 
 A1, A2, A3, A4, A5 = (artist_mbid(n) for n in range(1, 6))
@@ -180,7 +180,9 @@ def test_app_refuses_to_start_when_a_built_file_is_missing(
     with pytest.raises(StartupError) as caught:
         create_app(models)
     assert missing in str(caught.value)
-    assert "listenbrainz-recs-index" in str(caught.value)
+    # Changed by u2-pipeline: the artist file is built by the catalogue step, the rest by index.
+    step = "catalogue" if missing == ARTISTS_DB_FILE else "index"
+    assert f"listenbrainz-recs-{step}" in str(caught.value)
 
 
 def test_app_refuses_to_start_on_a_wrong_format_version(tiny_models: Path, tmp_path: Path) -> None:

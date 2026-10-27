@@ -1,0 +1,23 @@
+{
+  "stage": "code-generation",
+  "unit": "u3-web",
+  "version": 1,
+  "writes": [
+    { "path": "README.md" },
+    { "path": "pyproject.toml" },
+    { "path": "docs/manual-checks.md" },
+    { "path": "src/listenbrainz_recs/app/main.py" },
+    { "path": "src/listenbrainz_recs/app/static/index.html" },
+    { "path": "src/listenbrainz_recs/app/static/style.css" },
+    { "path": "src/listenbrainz_recs/app/static/app.js" },
+    { "path": "src/listenbrainz_recs/quality.py" },
+    { "path": "tests/conftest.py" },
+    { "path": "tests/fixtures/web_models.py" },
+    { "path": "tests/u3_web/test_headers_logs_concurrency.py" },
+    { "path": "tests/u3_web/test_page_files.py" },
+    { "path": "tests/u3_web/test_quality_check.py" },
+    { "path": "tests/u3_web/test_similar_endpoint.py" },
+    { "path": "tests/u3_web/test_suggest_endpoint.py" },
+    { "path": "tests/u3_web/test_u3_runner_ready.py" }
+  ]
+}

@@ -100,8 +100,10 @@ def test_suggest_ignores_case_and_accents_and_blank_text(catalog: ArtistCatalog)
 def test_suggest_orders_exact_then_prefix_then_listeners_and_caps_the_limit(
     catalog: ArtistCatalog,
 ) -> None:
-    # "a" is a prefix of Alpha and a substring of the others; the prefix match comes first, then
-    # the rest by listener count.
-    assert [s.mbid for s in catalog.suggest("a")] == [A1, A2, A3, A4]
-    assert len(catalog.suggest("a", limit=2)) == 2
-    assert len(catalog.suggest("a", limit=50)) <= 10
+    # Changed by u2-pipeline (BR4.3): names match by word start, so "a" now finds only Alpha;
+    # Béta, Gamma and Delta contain an "a" but no word of theirs starts with it.
+    assert [s.mbid for s in catalog.suggest("a")] == [A1]
+    assert catalog.suggest("lph") == []  # inside a word, no longer a match
+    assert [s.mbid for s in catalog.suggest("al")] == [A1]
+    assert len(catalog.suggest("al", limit=1)) == 1
+    assert len(catalog.suggest("al", limit=50)) <= 10  # the 10-result cap is tested in u2

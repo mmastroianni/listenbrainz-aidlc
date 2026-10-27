@@ -17,8 +17,12 @@ dependencies = [
 [project.scripts]
 listenbrainz-recs-prepare = "listenbrainz_recs.prep:main"
 listenbrainz-recs-train = "listenbrainz_recs.train:main"
+listenbrainz-recs-catalogue = "listenbrainz_recs.catalogue:main"
 listenbrainz-recs-index = "listenbrainz_recs.index:main"
+listenbrainz-recs-speed = "listenbrainz_recs.speed:main"
 listenbrainz-recs-serve = "listenbrainz_recs.app.main:main"
+listenbrainz-recs-quality-sheet = "listenbrainz_recs.quality:sheet_main"
+listenbrainz-recs-quality-verdict = "listenbrainz_recs.quality:verdict_main"
 
 [dependency-groups]
 dev = [

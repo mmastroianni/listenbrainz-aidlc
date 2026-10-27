@@ -1,0 +1,37 @@
+{
+  "stage": "nfr-design",
+  "unit": "u2-pipeline",
+  "upstream_ids": [
+    "NFR1.5", "NFR1.6", "NFR1.7", "NFR1.8", "NFR1.9", "NFR1.10",
+    "NFR2.8", "NFR2.9", "NFR2.10", "NFR2.11", "NFR2.12", "NFR2.13", "NFR2.14", "NFR2.15",
+    "NFR3.4", "NFR3.5", "NFR3.6", "NFR3.7", "NFR3.8",
+    "NFR4.2", "NFR5.2",
+    "NFR8.4", "NFR8.5", "NFR8.6"
+  ],
+  "coverage": [
+    { "id": "NFR1.5", "status": "OK", "target": "Exact in-memory index plus the speed command (logical-components.md, performance design)" },
+    { "id": "NFR1.6", "status": "OK", "target": "Popularity-numbered search table and sorted name index, three early-stopping queries (logical-components.md, performance design)" },
+    { "id": "NFR1.7", "status": "OK", "target": "24 GB Spark memory setting and batch reading of vectors (logical-components.md, performance design)" },
+    { "id": "NFR1.8", "status": "OK", "target": "No tuning for duration; step summary reports it (logical-components.md, performance and observability design)" },
+    { "id": "NFR1.9", "status": "OK", "target": "Fixture timing test (logical-components.md, performance design)" },
+    { "id": "NFR1.10", "status": "OK", "target": "Spark-side counting with an explicit schema (logical-components.md, scalability design)" },
+    { "id": "NFR2.8", "status": "OK", "target": "Step markers with run ids (logical-components.md, reliability design)" },
+    { "id": "NFR2.9", "status": "OK", "target": "Temporary name then rename; manifest removed first and written last (logical-components.md, reliability design)" },
+    { "id": "NFR2.10", "status": "OK", "target": "Replace the old file only after the new one is complete (logical-components.md, reliability design)" },
+    { "id": "NFR2.11", "status": "OK", "target": "Top-level boundary error messages (logical-components.md, reliability design)" },
+    { "id": "NFR2.12", "status": "OK", "target": "Out-of-memory message naming the setting (logical-components.md, reliability design)" },
+    { "id": "NFR2.13", "status": "OK", "target": "One counts-only summary line per step (logical-components.md, observability design)" },
+    { "id": "NFR2.14", "status": "OK", "target": "Prepare report saved as JSON (logical-components.md, observability design)" },
+    { "id": "NFR2.15", "status": "OK", "target": "Speed command prints both 95th percentiles (logical-components.md, observability design)" },
+    { "id": "NFR3.4", "status": "OK", "target": "Three-column prepared schema and a separate artist name file (security-design.md)" },
+    { "id": "NFR3.5", "status": "OK", "target": "Built-file writers never receive listener numbers; tests look for them (security-design.md)" },
+    { "id": "NFR3.6", "status": "OK", "target": "Counts-only summary function; bad lines never echoed (security-design.md)" },
+    { "id": "NFR3.7", "status": "OK", "target": "DumpSource is the only reader, read mode; checksum tests (security-design.md)" },
+    { "id": "NFR3.8", "status": "OK", "target": "Location check before any output folder is created (security-design.md)" },
+    { "id": "NFR4.2", "status": "OK", "target": "Local Spark master, no HTTP client (security-design.md)" },
+    { "id": "NFR5.2", "status": "OK", "target": "One output-path function, gitignore and check-script test (security-design.md)" },
+    { "id": "NFR8.4", "status": "OK", "target": "Spark web page off, driver bound to 127.0.0.1 (security-design.md)" },
+    { "id": "NFR8.5", "status": "OK", "target": "Normalised text, bound parameters, quoted full-text words (security-design.md)" },
+    { "id": "NFR8.6", "status": "OK", "target": "One process per step, read-only shared files, per-request connection (logical-components.md, scalability design)" }
+  ]
+}

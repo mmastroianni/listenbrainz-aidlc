@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Similar Artists</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <p class="eyebrow">SIMILAR ARTISTS</p>
+      <h1>Find artists like the ones you love</h1>
+      <p class="intro">Based on what ListenBrainz listeners play.</p>
+    </header>
+
+    <section class="search-area" aria-label="Artist search">
+      <label for="artist-search">Artist</label>
+      <div class="search-wrap">
+        <input id="artist-search" type="search" autocomplete="off" spellcheck="false"
+               placeholder="Search artists (e.g. henry threadgill)" role="combobox"
+               aria-autocomplete="list" aria-controls="suggestions" aria-expanded="false">
+        <button id="clear-search" class="clear-button" type="button" aria-label="Clear search"
+                hidden>&times;</button>
+        <ul id="suggestions" class="suggestions" role="listbox" aria-label="Suggestions"
+            hidden></ul>
+      </div>
+      <p class="hint">Use the up and down arrow keys and Enter to choose a suggestion.</p>
+    </section>
+
+    <section id="results-panel" class="results" aria-label="Similar artists" hidden>
+      <h2 id="results-heading" tabindex="-1">Similar artists</h2>
+      <p id="results-message" class="status" role="status"></p>
+      <ol id="placeholder-rows" class="results-list" aria-hidden="true" hidden></ol>
+      <ol id="results-list" class="results-list"></ol>
+      <div class="results-actions">
+        <button id="retry-button" class="action-button" type="button" hidden>Retry</button>
+        <button id="show-more" class="action-button" type="button" hidden>Show more</button>
+      </div>
+    </section>
+
+    <div id="live-status" class="sr-only" aria-live="polite"></div>
+  </main>
+
+  <template id="link-icons">
+    <svg data-icon="musicbrainz" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"
+         focusable="false"><path fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linejoin="round" d="M12 2 21 7v10l-9 5-9-5V7z M12 7v10 M8 9l4 3 4-3"/></svg>
+    <svg data-icon="youtube" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"
+         focusable="false"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+    <svg data-icon="spotify" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"
+         focusable="false"><path fill="currentColor"
+         d="M9 3v12.3A3.5 3.5 0 1 0 11 18.5V8h6V3z"/></svg>
+  </template>
+</body>
+</html>
