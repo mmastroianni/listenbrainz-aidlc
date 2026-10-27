@@ -1,5 +1,4 @@
-# Same check as `bash scripts/check.sh`. Switched off until the code is pushed to GitHub:
-# remove the `if: false` line below to turn it on.
+# Same check as `bash scripts/check.sh`, run on every push and pull request.
 name: check
 
 on:
@@ -8,7 +7,6 @@ on:
 
 jobs:
   check:
-    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
